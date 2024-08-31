@@ -1,9 +1,10 @@
 import * as vscode from 'vscode';
 import SpeechTranscription, {
   Transcription,
-  WhisperModel,
 } from './speech-transcription';
 import * as fs from 'fs';
+import { gatherText } from './speech-transcription';
+import { exec } from 'child_process';
 
 interface ExtensionState {
   myStatusBarItem: vscode.StatusBarItem | undefined;
@@ -34,26 +35,22 @@ export async function activate(context: vscode.ExtensionContext) {
     return;
   }
 
-  // Initialize the Recording class
-  initializeOutputChannel();
-  state.speechTranscription = new SpeechTranscription(
-    state.outputDir as string,
-    state.outputChannel as vscode.OutputChannel,
+  const whisperExecutablePath = getWhisperExecutablePath();
+  const whisperModelPath = getWhisperModelPath();
+
+  const isFFmpegInstalled = checkIfInstalled(
+    'ffmpeg',
   );
 
-  // Check if Sox and Whisper are installed
-  const isSoxInstalled = await state.speechTranscription?.checkIfInstalled(
-    'sox',
-  );
-  const isWhisperInstalled = await state.speechTranscription?.checkIfInstalled(
-    'whisper',
-  );
-
-  if (!isSoxInstalled) {
+  if (!isFFmpegInstalled) {
     vscode.window.showErrorMessage(
-      'SoX is not installed. Please install Sox for this extension to work properly.',
+      'FFmpeg is not installed. Please install ffmpeg for this extension to work properly.',
     );
   }
+
+  const isWhisperInstalled = whisperExecutablePath && checkIfInstalled(
+    whisperExecutablePath,
+  );
 
   if (!isWhisperInstalled) {
     vscode.window.showErrorMessage(
@@ -61,7 +58,22 @@ export async function activate(context: vscode.ExtensionContext) {
     );
   }
 
-  if (isSoxInstalled && isWhisperInstalled) {
+  const haveWhisperModel = whisperModelPath && fs.existsSync(whisperModelPath);
+  if (!haveWhisperModel) {
+    vscode.window.showErrorMessage(
+      'Whisper model path is not set. Please select a Whisper model for this extension to work properly.',
+    );
+  }
+  
+  // Initialize the Recording class
+  initializeOutputChannel();
+  state.speechTranscription = new SpeechTranscription(
+    state.outputDir as string,
+    state.outputChannel as vscode.OutputChannel,
+  );
+
+
+  if (isFFmpegInstalled && isWhisperInstalled && haveWhisperModel) {
     registerCommands(context);
     initializeStatusBarItem();
     updateStatusBarItem();
@@ -112,7 +124,8 @@ export async function toggleRecordingCommand(): Promise<void> {
     !state.isTranscribing
   ) {
     if (!state.isRecording) {
-      state.speechTranscription.startRecording();
+      const ffmpegCommandLine = getFFmpegCommandLine();
+      state.speechTranscription.startRecording(ffmpegCommandLine);
       state.recordingStartTime = Date.now();
       state.isRecording = true;
       updateStatusBarItem();
@@ -135,12 +148,13 @@ export async function toggleRecordingCommand(): Promise<void> {
         const interval = startProgressInterval(progress, incrementData);
 
         if (state.speechTranscription !== undefined) {
-          const model: WhisperModel = getWhisperModel();
+          const whisperExecutablePath = getWhisperExecutablePath()!;
+          const whisperModelPath = getWhisperModelPath()!;
           const transcription: Transcription | undefined =
-            await state.speechTranscription.transcribeRecording(model);
+            await state.speechTranscription.transcribeRecording(whisperExecutablePath, whisperModelPath);
 
           if (transcription) {
-            vscode.env.clipboard.writeText(transcription.text).then(() => {
+            vscode.env.clipboard.writeText(gatherText(transcription)).then(() => {
               vscode.commands.executeCommand(
                 'editor.action.clipboardPasteAction',
               );
@@ -246,19 +260,47 @@ export function deactivate() {
   console.log('Your extension "Whisper Assistant" is now deactivated');
 }
 
-function getWhisperModel(): WhisperModel {
+function getWhisperExecutablePath(): string | undefined {
   const config = vscode.workspace.getConfiguration('whisper-assistant');
-  const whisperModel = config.get('model') as WhisperModel;
-  if (!whisperModel) {
+  const whisperExecutablePath = config.get('whisper_executable_path') as string;
+  if (!whisperExecutablePath) {
     state.outputChannel?.appendLine(
-      'Whisper Assistant: No whisper model found in configuration',
+      'Whisper Assistant: No whisper.cpp executable path found in configuration',
     );
-    return 'base';
+    return undefined;
   }
+  return whisperExecutablePath;
+}
 
-  return whisperModel;
+function getWhisperModelPath(): string | undefined {
+  const config = vscode.workspace.getConfiguration('whisper-assistant');
+  const whisperModelPath = config.get('whisper_model_path') as string;
+  if (!whisperModelPath) {
+    state.outputChannel?.appendLine(
+      'Whisper Assistant: No ggml model path available for whisper.cpp',
+    );
+    return undefined;
+  }
+  return whisperModelPath;
+}
+
+
+function getFFmpegCommandLine(): string { 
+  const config = vscode.workspace.getConfiguration('whisper-assistant');
+  const ffmpegDevice = config.get('ffmpeg_device', ':0') as string;
+  const ffmpegFormat = config.get('ffmpeg_format', 'avfoundation') as string;
+  return `ffmpeg -f ${ffmpegFormat} -i ${ffmpegDevice} -ar 16000 -ac 1 -c:a pcm_s16le -f wav ${state.outputDir}/recording.wav`;
 }
 
 export function initializeOutputChannel(): void {
   state.outputChannel = vscode.window.createOutputChannel('Whisper Assistant');
 }
+
+export function checkIfInstalled(command: string): boolean {
+    try {
+      exec(`${command} --help`);
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }

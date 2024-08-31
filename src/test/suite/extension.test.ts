@@ -8,6 +8,7 @@ import {
   deactivate,
   state,
   initializeOutputChannel,
+  checkIfInstalled,
 } from '../../extension';
 
 // NOTE: Tests can only be run if a workspace is open, so we need to open a known workspace before running the tests
@@ -33,8 +34,8 @@ suite('Extension Test Suite', () => {
       outputWorkspace,
       state.outputChannel,
     );
-    const isSoxInstalled = await speechTranscription.checkIfInstalled('sox');
-    assert.strictEqual(isSoxInstalled, true);
+    const isFfmpegInstalled = checkIfInstalled('ffmpeg');
+    assert.strictEqual(isFfmpegInstalled, true);
   });
 
   test('Check if Whisper is installed', async () => {
@@ -46,7 +47,7 @@ suite('Extension Test Suite', () => {
       outputWorkspace,
       state.outputChannel,
     );
-    const isWhisperInstalled = await speechTranscription.checkIfInstalled(
+    const isWhisperInstalled = checkIfInstalled(
       'whisper',
     );
     assert.strictEqual(isWhisperInstalled, true);

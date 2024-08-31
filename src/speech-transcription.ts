@@ -6,25 +6,37 @@ import { promisify } from 'util';
 const execAsync = promisify(exec);
 
 interface Segment {
-  id: number;
-  seek: number;
-  start: number;
-  end: number;
+  timestamps: {
+    from: string;
+    to: string;
+  };
+
+  offsets: {
+    from: number;
+    to: number;
+  };
+
   text: string;
-  tokens: number[];
-  temperature: number;
 }
 
-export interface Transcription {
-  text: string;
-  segments: Segment[];
+interface Result {
   language: string;
 }
 
-export type WhisperModel = 'tiny' | 'base' | 'small' | 'medium' | 'large';
+export interface Transcription {
+  transcription: Segment[];
+  result: Result;
+}
+
+export function gatherText(transcription: Transcription): string {
+  return transcription.transcription
+  // blank audio marker is added by whisper when there is no audio
+  .filter((segment) => segment.text !== '[BLANK AUDIO]')
+  .map((segment) => segment.text).join('');
+}
+
 
 class SpeechTranscription {
-  private fileName: string = 'recording';
   private recordingProcess: ChildProcess | null = null;
 
   constructor(
@@ -32,23 +44,16 @@ class SpeechTranscription {
     private outputChannel: vscode.OutputChannel,
   ) {}
 
-  async checkIfInstalled(command: string): Promise<boolean> {
-    try {
-      await execAsync(`${command} --help`);
-      return true;
-    } catch (error) {
-      return false;
-    }
-  }
+
 
   getOutputDir(): string {
     return this.outputDir;
   }
 
-  startRecording(): void {
+  startRecording(ffmpegCommandLine: string): void {
     try {
       this.recordingProcess = exec(
-        `sox -d -b 16 -e signed -c 1 -r 16k ${this.outputDir}/${this.fileName}.wav`,
+        ffmpegCommandLine,
         (error, stdout, stderr) => {
           if (error) {
             this.outputChannel.appendLine(`Whisper Assistant: error: ${error}`);
@@ -56,7 +61,7 @@ class SpeechTranscription {
           }
           if (stderr) {
             this.outputChannel.appendLine(
-              `Whisper Assistant: SoX process has been killed: ${stderr}`,
+              `Whisper Assistant: ffmpeg process error: ${stderr}`,
             );
             return;
           }
@@ -81,14 +86,16 @@ class SpeechTranscription {
   }
 
   async transcribeRecording(
-    model: WhisperModel,
+    whisperExecutablePath: string,
+    whisperModelPath: string,
   ): Promise<Transcription | undefined> {
     try {
       this.outputChannel.appendLine(
-        `Whisper Assistant: Transcribing recording using '${model}' model`,
+        `Whisper Assistant: Transcribing recording using '${whisperModelPath}'`,
       );
       const { stdout, stderr } = await execAsync(
-        `whisper ${this.outputDir}/${this.fileName}.wav --model ${model} --output_format json --task transcribe --language English --fp16 False --output_dir ${this.outputDir}`,
+        // .json suffix is added automagically
+        `${whisperExecutablePath} ${this.outputDir}/recording.wav --model ${whisperModelPath} --output-json --language en --output-file ${this.outputDir}/recording`,
       );
       this.outputChannel.appendLine(
         `Whisper Assistant: Transcription: ${stdout}`,
@@ -102,7 +109,7 @@ class SpeechTranscription {
   private async handleTranscription(): Promise<Transcription | undefined> {
     try {
       const data = await fs.promises.readFile(
-        `${this.outputDir}/${this.fileName}.json`,
+        `${this.outputDir}/recording.json`,
         'utf8',
       );
       if (!data) {
@@ -112,7 +119,7 @@ class SpeechTranscription {
         return;
       }
       const transcription: Transcription = JSON.parse(data);
-      this.outputChannel.appendLine(`Whisper Assistant: ${transcription.text}`);
+      this.outputChannel.appendLine(`Whisper Assistant: ${gatherText(transcription)}`);
 
       return transcription;
     } catch (err) {
@@ -124,8 +131,8 @@ class SpeechTranscription {
 
   deleteFiles(): void {
     // Delete files
-    fs.unlinkSync(`${this.outputDir}/${this.fileName}.wav`);
-    fs.unlinkSync(`${this.outputDir}/${this.fileName}.json`);
+    fs.unlinkSync(`${this.outputDir}/recording.wav`);
+    fs.unlinkSync(`${this.outputDir}/recording.json`);
   }
 }
 

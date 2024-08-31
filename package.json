@@ -3,11 +3,11 @@
   "displayName": "Whisper Assistant",
   "description": "Leveraging OpenAI's Whisper to transcribe your speech, enhancing your coding efficiency and experience.",
   "version": "1.0.0",
-  "publisher": "MartinOpenSky",
+  "publisher": "0xshipthecode",
   "icon": "images/whisper-assistant.png",
   "repository": {
     "type": "git",
-    "url": "https://github.com/martin-opensky/whisper-assistant-vscode.git"
+    "url": "https://github.com/0xshipthecode/whisper-assistant-vscode.git"
   },
   "engines": {
     "vscode": "^1.70.0"
@@ -38,17 +38,25 @@
       "type": "object",
       "title": "Whisper Assistant Settings",
       "properties": {
-        "whisper-assistant.model": {
+        "whisper-assistant.whisper_executable_path": {
           "type": "string",
-          "default": "base",
-          "enum": [
-            "tiny",
-            "base",
-            "small",
-            "medium",
-            "large"
-          ],
-          "description": "Set the whisper model to use. Base is the default."
+          "default": "",
+          "description": "Set the whisper.cpp `main` executable path."
+        },
+        "whisper-assistant.whisper_model_path": {
+          "type": "string",
+          "default": "",
+          "description": "Path to GGML model for use by whisper.cpp `main` executable."
+        },
+        "whisper-assistant.ffmpeg_device": {
+          "type": "string",
+          "default": ":0",
+          "description": "Set the ffmpeg device to use for recording audio. Default is `:0`"
+        },
+        "whisper-assistant.ffmpeg_format": {
+          "type": "string",
+          "default": "avfoundation",
+          "description": "Set the ffmpeg format to use for recording audio. Default is `avfoundation`."
         }
       }
     }
@@ -65,7 +73,7 @@
   },
   "devDependencies": {
     "@types/mocha": "^10.0.1",
-    "@types/node": "16.x",
+    "@types/node": "22.x",
     "@types/vscode": "^1.70.0",
     "@typescript-eslint/eslint-plugin": "^6.4.1",
     "@typescript-eslint/parser": "^6.4.1",
@@ -74,5 +82,8 @@
     "glob": "^10.3.3",
     "mocha": "^10.2.0",
     "typescript": "^5.1.6"
+  },
+  "dependencies": {
+    "vsce": "^2.15.0"
   }
 }
